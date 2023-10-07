@@ -20,9 +20,9 @@ def compute_metrics(queries, targets) -> dict:
         for i in range(item['ground_truth'].size(0)):
             target_authors.append(item['ground_truth'][i])
             t_list.append(item['embedding'][i])
-            
     target_authors = torch.tensor(target_authors).cpu().numpy()
     t_list = torch.cat(t_list, dim=0).cpu().numpy()
+    
     metric_scores = {}
     metric_scores.update(ranking(q_list, t_list, query_authors, target_authors))
     
@@ -49,8 +49,7 @@ def ranking(queries,
     index.add_with_ids(targets, np.array(range(len(target_authors))).astype(np.int64))
     faiss.normalize_L2(queries)
     D, I = index.search(queries, k=1000)
-
-    for i in tqdm(range(num_queries)):
+    for i in range(num_queries):
         sorted_target_authors = target_authors[I[i]]
         r = np.where(sorted_target_authors == query_authors[i])[0]
         

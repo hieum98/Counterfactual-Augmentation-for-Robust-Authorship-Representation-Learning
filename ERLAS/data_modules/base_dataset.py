@@ -88,7 +88,7 @@ class BaseDataset(ABC, Dataset):
             author_data[self.text_key].extend(tmp)
             num_docs = episode_length
         
-        num_augmented = (self.augmented_percentage / (1 - self.augmented_percentage)) * num_docs
+        num_augmented = ceil((self.augmented_percentage / (1 - self.augmented_percentage)) * num_docs)
         tmp = []
         tmp_origin = []
         for i in range(num_augmented):

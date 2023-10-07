@@ -27,5 +27,6 @@ setuptools==68.0.0
 spacy==3.6.1
 tqdm==4.65.0
 transformers
+tensorboard
 typing_extensions==4.7.1
 zstandard==0.21.0

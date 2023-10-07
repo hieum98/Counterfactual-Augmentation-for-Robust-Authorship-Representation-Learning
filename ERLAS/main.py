@@ -30,7 +30,6 @@ def main(params):
     # create experiment_dir and load model
     experiment_dir = os.path.join(params.output_path, params.experiment_id)
     model = LightningTrainer(params)
-    # train_dataloader = model.train_dataloader()
 
     checkpoint_callback = ModelCheckpoint(
         dirpath=os.path.join(experiment_dir, params.version, 'checkpoints'),
@@ -38,7 +37,7 @@ def main(params):
         auto_insert_metric_name=False,
         monitor=None,
         save_top_k=-1,
-        every_n_train_steps=500,
+        every_n_epochs=1,
     )
 
     # load checkpoint if necessary
@@ -54,6 +53,7 @@ def main(params):
     logger = TensorBoardLogger(experiment_dir, version=params.version)
     lr_logger = LearningRateMonitor(logging_interval='step')
     if params.do_learn:
+        train_dataloader = model.train_dataloader()
         trainer = pt.Trainer(default_root_dir=experiment_dir, 
                             max_epochs=params.num_epoch,
                             logger=logger,

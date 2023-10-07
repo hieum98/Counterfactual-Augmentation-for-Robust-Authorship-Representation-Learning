@@ -85,12 +85,15 @@ class HardRetrievalBatchDataset(BaseDataset):
     def load_data(self, split:str, preprocess_path=None):
         if split=='train':
             if preprocess_path != None:
+                print(f"Loading data from {preprocess_path} ....")
                 data = load_dataset('json', data_files=preprocess_path, split='train', cache_dir='cache')
             else:
+                print(f"Loading data from {self.data_file} ....")
                 data = load_dataset('json', data_files=self.data_file, split='train', cache_dir='cache')
                 if self.training_percentage < 1.0:
                     data = data.train_test_split(train_size=self.training_percentage, load_from_cache_file=False)['train']
         else:
+            print(f"Loading data from {self.queries_file}, and {self.candidates_file} ....")
             queries = load_dataset('json', data_files=self.queries_file, split='train', cache_dir='cache')
             queries = queries.map(lambda example: {'is_query': True})
             candidates = load_dataset('json', data_files=self.candidates_file, split='train', cache_dir='cache')
@@ -212,15 +215,14 @@ class HardRetrievalBatchDataset(BaseDataset):
         min_posts = min([d.shape[1] for d in input_ids])
 
         # Size of episode = R + ⌈x(S-R)⌉, x ~ Beta(3,1)
-        sample_size = min(1 + ceil(np.random.beta(3, 1) *
-                          15), min_posts)
+        sample_size = min(1 + ceil(np.random.beta(3, 1) * self.params.episode_length), min_posts)
 
         # If minimum posts < episode length, make start 0 to ensure you get all posts
-        if min_posts < 16:
+        if min_posts < self.params.episode_length:
             start = 0
         else:
             # Pick a random start index
-            start = np.random.randint(0, 16 - sample_size + 1)
+            start = np.random.randint(0, self.params.episode_length - sample_size + 1)
     
         input_ids = torch.stack(padding([f[:, start:start + sample_size, :] for f in input_ids], pad_value=self.tokenizer.pad_token_id)) # (bs, a, d.p.a, l)
         attention_mask = torch.stack(padding([f[:, start:start + sample_size, :] for f in attention_mask], pad_value=0))
@@ -238,7 +240,7 @@ class HardRetrievalBatchDataset(BaseDataset):
         return data, author, is_query
 
     def __len__(self):
-        return ceil(len(self.data)/self.batch_size) if self.split=='train' else len(self.data)
+        return 15*ceil(len(self.data)/self.batch_size) if self.split=='train' else len(self.data)
     
     def __getitem__(self, index) -> Any:
         if self.split=='train':
@@ -281,7 +283,7 @@ class HardRetrievalBatchDataset(BaseDataset):
         else:
             author_data = self.data[index]
             tokenized_episode = self.tokenizer(
-                author_data[self.text_key], 
+                author_data[self.text_key][:64], 
                 padding="max_length", 
                 truncation=True, 
                 max_length=self.token_max_length, 
