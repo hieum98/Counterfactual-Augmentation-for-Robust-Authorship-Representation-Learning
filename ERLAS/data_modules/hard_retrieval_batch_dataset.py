@@ -50,7 +50,10 @@ class HardRetrievalBatchDataset(BaseDataset):
         self.is_index_by_BM25 = params.index_by_BM25
         self.is_index_by_dense_retriever = params.index_by_dense_retriever
         
-        preprocess_file = f'dr_{self.is_index_by_dense_retriever}_BM25_{self.is_index_by_BM25}_data.jsonl'
+        if self.training_percentage < 1.0:
+            preprocess_file = f'{self.training_percentage}_dr_{self.is_index_by_dense_retriever}_BM25_{self.is_index_by_BM25}_data.jsonl'
+        else:
+            preprocess_file = f'dr_{self.is_index_by_dense_retriever}_BM25_{self.is_index_by_BM25}_data.jsonl'
         preprocess_path = os.path.join(self.dataset_path, preprocess_file)
         if os.path.exists(preprocess_path) and self.split=='train':
             print(f"Loading preprocessed data from cache: {preprocess_path}")
@@ -91,6 +94,7 @@ class HardRetrievalBatchDataset(BaseDataset):
                 print(f"Loading data from {self.data_file} ....")
                 data = load_dataset('json', data_files=self.data_file, split='train', cache_dir='cache')
                 if self.training_percentage < 1.0:
+                    print(f"Loading {self.training_percentage} data....")
                     data = data.train_test_split(train_size=self.training_percentage, load_from_cache_file=False)['train']
         else:
             print(f"Loading data from {self.queries_file}, and {self.candidates_file} ....")

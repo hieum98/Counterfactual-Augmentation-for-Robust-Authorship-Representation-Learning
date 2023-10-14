@@ -171,7 +171,7 @@ class LightningTrainer(pt.LightningModule):
         for source, dataset in datasets.items():
             data_loaders[source] = DataLoader(dataset,
                                             batch_size=1,
-                                            shuffle=True,
+                                            shuffle=False,
                                             num_workers=self.params.num_workers,
                                             pin_memory=self.params.pin_memory,
                                             collate_fn=dataset.val_test_collate_fn)
