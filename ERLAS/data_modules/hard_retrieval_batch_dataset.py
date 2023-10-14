@@ -88,7 +88,7 @@ class HardRetrievalBatchDataset(BaseDataset):
         self.bm25_percentage = bm25_percentage 
         self.dense_percentage = dense_percentage
         if self.split != 'train':
-            self.token_max_length = 512
+            self.token_max_length = 128
         
     def load_data(self, split:str, preprocess_path=None):
         if split=='train':
