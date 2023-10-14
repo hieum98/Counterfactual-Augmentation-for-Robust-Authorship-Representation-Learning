@@ -1,5 +1,6 @@
 import gc
 from argparse import Namespace
+import json
 from math import ceil
 import os
 import random
@@ -73,17 +74,24 @@ class HardRetrievalBatchDataset(BaseDataset):
                 self.retrieval_encoder = AutoModel.from_pretrained(params.retriever_model)
                 self.retrieval_tokenizer = AutoTokenizer.from_pretrained(params.retriever_model)
                 self.retrieval_encoder = self.retrieval_encoder.cuda()
-                self.index_by_dense_retriever()
+                retrieval_result = self.index_by_dense_retriever()
             
             if self.split=='train':
-                cols_to_remove = list(set(self.data.column_names) - set([self.author_key, self.text_key, 'dense_retriever_hard_example_idx', 'BM25_hard_example_idx']))
-                self.data = self.data.remove_columns(cols_to_remove)
-                self.data.to_json(preprocess_path)
+                print("Saving cache.....")
+                with open(preprocess_path, 'w', encoding='utf-8') as f:
+                    for idx, data in tqdm.tqdm(enumerate(self.data)):
+                        datapoint = {self.author_key: data[self.author_key],
+                                     self.text_key: data[self.text_key],
+                                     'dense_retriever_hard_example_idx': retrieval_result[idx], 
+                                     'BM25_hard_example_idx': data['BM25_hard_example_idx']}
+                        json.dump(datapoint, f)
+                        f.write('\n')
+            self.data = load_dataset('json', data_files=preprocess_path, split='train', cache_dir='cache')
         self.batch_size = params.batch_size if params.batch_size < len(self.data) else len(self.data)
         self.bm25_percentage = bm25_percentage 
         self.dense_percentage = dense_percentage
         if self.split != 'train':
-            self.token_max_length = 512
+            self.token_max_length = 128
         
     def load_data(self, split:str, preprocess_path=None):
         if split=='train':
@@ -106,30 +114,10 @@ class HardRetrievalBatchDataset(BaseDataset):
             data = concatenate_datasets([queries, candidates])            
         return data
     
-    # def index_by_elasticsearch(self):
-    #     num_hard_example = 1000 if len(self.data) > 1000 else len(self.data)
-    #     data_with_index = self.data.map(lambda example: {"author_content": " ".join(example[self.text_key])[:5000]})
-    #     try:
-    #         data_with_index.add_elasticsearch_index('author_content', 
-    #                                         es_client=self.es_client,
-    #                                         es_index_name=f'{self.dataset_name}_{self.split}'.lower(),)
-    #     except:
-    #         data_with_index.load_elasticsearch_index('author_content', 
-    #                                         es_client=self.es_client,
-    #                                         es_index_name=f'{self.dataset_name}_{self.split}'.lower(),)
-        
-    #     retrieval_result = []
-    #     for example in tqdm.tqdm(data_with_index):
-    #         query = example['author_content']
-    #         _, retrieval_idx = data_with_index.search('author_content', query, k=num_hard_example)
-    #         retrieval_result.append(list(set(retrieval_idx) - set([example['author_id']])))
-        
-    #     self.data = self.data.add_column('es_hard_example_idx', retrieval_result)
-    
     def index_by_BM25(self):
         num_hard_example = 1000 if len(self.data) > 1000 else len(self.data)
         
-        retriv.set_base_path("./retriv")
+        retriv.set_base_path("/mnt/hieu/retriv")
         
         self.data = self.data.map(lambda example, idx: {"author_content": " ".join(example[self.text_key])[:5000], "id": idx}, with_indices=True)
         try:
@@ -161,9 +149,11 @@ class HardRetrievalBatchDataset(BaseDataset):
                 queries=queries,
                 cutoff=num_hard_example
             )
-            return {'BM25_hard_example_idx': [list(item.keys()) for item in retrieval_results.values()]}
+            return {'BM25_hard_example_idx': [list(item.keys()) for item in retrieval_results.values()],
+                    self.author_key: batch[self.author_key],
+                    self.text_key: batch[self.text_key]}
 
-        self.data = self.data.map(lambda batch: retrieve(batch), batched=True, batch_size=500)
+        self.data = self.data.map(lambda batch: retrieve(batch), batched=True, batch_size=500, cache_file_name=f"cache/BM25/BM25_{self.dataset_name}", remove_columns=self.data.column_names)
         
         del spare_retriver
         gc.collect()
@@ -195,7 +185,7 @@ class HardRetrievalBatchDataset(BaseDataset):
         del data_with_index
         gc.collect()
         
-        self.data = self.data.add_column('dense_retriever_hard_example_idx', retrieval_result)
+        return retrieval_result
         
     
     def train_collate_fn(self, batch):
