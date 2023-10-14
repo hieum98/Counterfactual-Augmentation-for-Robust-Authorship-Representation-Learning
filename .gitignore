@@ -5,3 +5,5 @@ experiments
 retriv
 pretrained_weights
 draft.ipynb
+test.sh
+ERLAS/data_modules/constants.py
