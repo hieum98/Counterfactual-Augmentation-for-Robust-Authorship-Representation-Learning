@@ -32,7 +32,7 @@ def create_argument_parser():
                         help="The proportion of hard examples retrieverd by elasticsearch")
     parser.add_argument("--dense_percentage", type=float, default=0.5,
                         help="The proportion of hard examples retrieverd by faiss")
-    parser.add_argument("--batch_size", type=int, default=1024,
+    parser.add_argument("--batch_size", type=int, default=128,
                         help="Number of authors to include in each batch")
     parser.add_argument("--augmented_percentage", type=int, default=0.0,
                         help="The percentage of augmented episode in a batch")

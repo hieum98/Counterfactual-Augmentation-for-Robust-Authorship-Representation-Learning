@@ -86,7 +86,7 @@ class HardRetrievalBatchDataset(BaseDataset):
                                      'BM25_hard_example_idx': data['BM25_hard_example_idx']}
                         json.dump(datapoint, f)
                         f.write('\n')
-            self.data = load_dataset('json', data_files=preprocess_path, split='train', cache_dir='cache')
+                self.data = load_dataset('json', data_files=preprocess_path, split='train', cache_dir='cache')
         self.batch_size = params.batch_size if params.batch_size < len(self.data) else len(self.data)
         self.bm25_percentage = bm25_percentage 
         self.dense_percentage = dense_percentage
