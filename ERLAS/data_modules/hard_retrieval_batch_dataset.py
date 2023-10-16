@@ -85,7 +85,6 @@ class HardRetrievalBatchDataset(BaseDataset):
                                      self.text_key: data[self.text_key],
                                      'dense_retriever_hard_example_idx': [int(item) for item in set(retrieval_result[idx])], 
                                      'BM25_hard_example_idx': [int(item) for item in set(data['BM25_hard_example_idx'])]}
-                        breakpoint()
                         json.dump(datapoint, f)
                         f.write('\n')
                 self.data = load_dataset('json', data_files=preprocess_path, split='train', cache_dir='cache')
