@@ -3,6 +3,7 @@ from argparse import Namespace
 import json
 from math import ceil
 import os
+import pathlib
 import random
 from typing import Any
 from more_itertools import collapse
@@ -82,8 +83,9 @@ class HardRetrievalBatchDataset(BaseDataset):
                     for idx, data in tqdm.tqdm(enumerate(self.data)):
                         datapoint = {self.author_key: data[self.author_key],
                                      self.text_key: data[self.text_key],
-                                     'dense_retriever_hard_example_idx': retrieval_result[idx], 
-                                     'BM25_hard_example_idx': data['BM25_hard_example_idx']}
+                                     'dense_retriever_hard_example_idx': [int(item) for item in set(retrieval_result[idx])], 
+                                     'BM25_hard_example_idx': [int(item) for item in set(data['BM25_hard_example_idx'])]}
+                        breakpoint()
                         json.dump(datapoint, f)
                         f.write('\n')
                 self.data = load_dataset('json', data_files=preprocess_path, split='train', cache_dir='cache')
@@ -117,7 +119,7 @@ class HardRetrievalBatchDataset(BaseDataset):
     def index_by_BM25(self):
         num_hard_example = 1000 if len(self.data) > 1000 else len(self.data)
         
-        retriv.set_base_path("/mnt/hieu/retriv")
+        retriv.set_base_path("retriv")
         
         self.data = self.data.map(lambda example, idx: {"author_content": " ".join(example[self.text_key])[:5000], "id": idx}, with_indices=True)
         try:
@@ -153,8 +155,8 @@ class HardRetrievalBatchDataset(BaseDataset):
                     self.author_key: batch[self.author_key],
                     self.text_key: batch[self.text_key]}
 
-        self.data = self.data.map(lambda batch: retrieve(batch), batched=True, batch_size=500, cache_file_name=f"cache/BM25/BM25_{self.dataset_name}", remove_columns=self.data.column_names)
-        
+        pathlib.Path(f"cache/BM25").mkdir(parents=True, exist_ok=True)
+        self.data = self.data.map(lambda batch: retrieve(batch), batched=True, batch_size=500, cache_file_name=f"cache/BM25_{self.dataset_name}.pyarow", remove_columns=self.data.column_names)
         del spare_retriver
         gc.collect()
         
@@ -173,7 +175,8 @@ class HardRetrievalBatchDataset(BaseDataset):
             return example
         
         data_with_index = self.data.map(lambda example: {"author_content": " ".join(example[self.text_key])})
-        data_with_index = data_with_index.map(lambda example, rank: compute_embedding(example, rank, self.retrieval_encoder, self.retrieval_tokenizer), batched=True, batch_size=256, with_rank=True,)
+        data_with_index = data_with_index.map(lambda example, rank: compute_embedding(example, rank, self.retrieval_encoder, self.retrieval_tokenizer), 
+                                              batched=True, batch_size=256, with_rank=True, cache_file_name=f"cache/condenser_{self.dataset_name}.pyarow")
         data_with_index.add_faiss_index(column='embeddings', faiss_verbose=True)
         
         retrieval_result = []
@@ -183,7 +186,6 @@ class HardRetrievalBatchDataset(BaseDataset):
             retrieval_result.append(list(set(retrieval_idx) - set([example['author_id']])))
         
         del data_with_index
-        gc.collect()
         
         return retrieval_result
         
