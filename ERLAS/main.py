@@ -53,7 +53,7 @@ def main(params):
     logger = TensorBoardLogger(experiment_dir, version=params.version)
     lr_logger = LearningRateMonitor(logging_interval='step')
     if params.do_learn:
-        train_dataloader = model.train_dataloader()
+        model.train_dataloader()
         trainer = pt.Trainer(default_root_dir=experiment_dir, 
                             max_epochs=params.num_epoch,
                             logger=logger,
