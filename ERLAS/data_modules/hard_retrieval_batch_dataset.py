@@ -36,8 +36,16 @@ class HardRetrievalBatchDataset(BaseDataset):
             self.candidates_file = os.path.join(self.dataset_path, 'validation_targets.jsonl')
         elif dataset_name == 'PAN':
             self.data_file = os.path.join(self.dataset_path, 'cleaned_data.jsonl')
-            self.queries_file = os.path.join(self.dataset_path, 'queries_raw.jsonl')
-            self.candidates_file = os.path.join(self.dataset_path, 'targets_raw.jsonl')
+            self.queries_file = os.path.join(self.dataset_path, 'pan_21_queries_raw.jsonl')
+            self.candidates_file = os.path.join(self.dataset_path, 'pan_21_targets_raw.jsonl')
+        elif dataset_name == 'PAN20':
+            self.data_file = os.path.join(self.dataset_path, 'cleaned_data.jsonl')
+            self.queries_file = os.path.join(self.dataset_path, 'pan_20_queries_raw.jsonl')
+            self.candidates_file = os.path.join(self.dataset_path, 'pan_20_targets_raw.jsonl')
+        elif dataset_name == 'PAN21':
+            self.data_file = os.path.join(self.dataset_path, 'cleaned_data.jsonl')
+            self.queries_file = os.path.join(self.dataset_path, 'pan_21_queries_raw.jsonl')
+            self.candidates_file = os.path.join(self.dataset_path, 'pan_21_targets_raw.jsonl')
         elif dataset_name == 'MUD':
             self.data_file = os.path.join(self.dataset_path, 'cleaned_data.jsonl')
             self.queries_file = os.path.join(self.dataset_path, 'test_queries.jsonl')
