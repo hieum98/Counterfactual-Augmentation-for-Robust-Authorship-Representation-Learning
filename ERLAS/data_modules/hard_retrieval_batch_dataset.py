@@ -132,11 +132,11 @@ class HardRetrievalBatchDataset(BaseDataset):
         
         self.data = self.data.map(lambda example, idx: {"author_content": " ".join(example[self.text_key])[:5000], "id": idx}, with_indices=True)
         try:
-            spare_retriver = SparseRetriever.load(f'{self.dataset_name}_{self.split}'.lower())
+            spare_retriver = SparseRetriever.load(f'{self.dataset_name}_{self.split}_{self.training_percentage}'.lower())
             print("index loaded!")
         except:
             self.data.to_json(f'cache/{self.dataset_name}_{self.split}.jsonl')
-            spare_retriver = SparseRetriever(index_name=f'{self.dataset_name}_{self.split}'.lower(),
+            spare_retriver = SparseRetriever(index_name=f'{self.dataset_name}_{self.split}_{self.training_percentage}'.lower(),
                                     model="bm25",
                                     min_df=1,
                                     tokenizer="whitespace",
@@ -165,7 +165,7 @@ class HardRetrievalBatchDataset(BaseDataset):
                     self.text_key: batch[self.text_key]}
 
         pathlib.Path(f"cache/BM25").mkdir(parents=True, exist_ok=True)
-        self.data = self.data.map(lambda batch: retrieve(batch), batched=True, batch_size=500, cache_file_name=f"cache/BM25_{self.dataset_name}.pyarow", remove_columns=self.data.column_names)
+        self.data = self.data.map(lambda batch: retrieve(batch), batched=True, batch_size=500, cache_file_name=f"cache/{self.training_percentage}_BM25_{self.dataset_name}.pyarow", remove_columns=self.data.column_names)
         del spare_retriver
         gc.collect()
         
@@ -185,7 +185,7 @@ class HardRetrievalBatchDataset(BaseDataset):
         
         data_with_index = self.data.map(lambda example: {"author_content": " ".join(example[self.text_key])})
         data_with_index = data_with_index.map(lambda example, rank: compute_embedding(example, rank, self.retrieval_encoder, self.retrieval_tokenizer), 
-                                              batched=True, batch_size=256, with_rank=True, cache_file_name=f"cache/condenser_{self.dataset_name}.pyarow")
+                                              batched=True, batch_size=256, with_rank=True, cache_file_name=f"cache/{self.training_percentage}_condenser_{self.dataset_name}.pyarow")
         data_with_index.add_faiss_index(column='embeddings', faiss_verbose=True)
         
         retrieval_result = []
