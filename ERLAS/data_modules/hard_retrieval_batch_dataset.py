@@ -96,9 +96,7 @@ class HardRetrievalBatchDataset(BaseDataset):
                                      'BM25_hard_example_idx': [int(item) for item in set(data['BM25_hard_example_idx'])]}
                         json.dump(datapoint, f)
                         f.write('\n')
-                del self.data
-                gc.collect()
-                self.data = load_dataset('json', data_files=preprocess_path, split='train', cache_dir='cache')
+                self.data = self.data.map(lambda x, idx: {'dense_retriever_hard_example_idx': retrieval_result[idx]}, with_indices=True)
         self.batch_size = params.batch_size if params.batch_size < len(self.data) else len(self.data)
         self.bm25_percentage = bm25_percentage 
         self.dense_percentage = dense_percentage
