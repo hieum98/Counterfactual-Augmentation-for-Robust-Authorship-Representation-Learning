@@ -4,11 +4,13 @@ import json
 from math import ceil
 import os
 import pathlib
+import pickle
 import random
-from typing import Any
+from typing import Any, List
 from more_itertools import collapse
 import numpy as np
 import torch
+import torch.nn.functional as F
 import tqdm
 from multiprocess import set_start_method
 from transformers import AutoModel, AutoTokenizer
@@ -17,7 +19,8 @@ from retriv import SparseRetriever
 import retriv
 
 from .base_dataset import BaseDataset
-from ..utils.tools import padding
+# from ..model.prod_lda import TopicModel
+from ..utils.tools import mean_pooling, padding, preprocess
 
 
 class HardRetrievalBatchDataset(BaseDataset):
@@ -74,16 +77,8 @@ class HardRetrievalBatchDataset(BaseDataset):
             print("Start preprocessing data ...")
             self.data = self.load_data(split=split)
             if self.is_index_by_BM25 and self.split=='train':
-                # ELASTIC_PASSWORD = "XjOvVM+=yyheU_-7Ptj4"
-                # self.es_client = Elasticsearch( "https://localhost:9200", 
-                #                         ca_certs="/disk/hieu/elasticsearch-8.9.1/config/certs/http_ca.crt", 
-                #                         basic_auth=("elastic", ELASTIC_PASSWORD),
-                #                         request_timeout=10000000)
                 self.index_by_BM25()
             if self.is_index_by_dense_retriever and self.split=='train':
-                self.retrieval_encoder = AutoModel.from_pretrained(params.retriever_model)
-                self.retrieval_tokenizer = AutoTokenizer.from_pretrained(params.retriever_model)
-                self.retrieval_encoder = self.retrieval_encoder.cuda()
                 retrieval_result = self.index_by_dense_retriever()
             
             if self.split=='train':
@@ -97,6 +92,11 @@ class HardRetrievalBatchDataset(BaseDataset):
                         json.dump(datapoint, f)
                         f.write('\n')
                 self.data = self.data.map(lambda x, idx: {'dense_retriever_hard_example_idx': retrieval_result[idx]}, with_indices=True)
+        
+        self.data = self.data.map(lambda item: {'pruned_docs': [' '.join(preprocess(it)) for it in item[self.text_key]]},
+                                cache_file_name=f"cache/{self.training_percentage}_preprocess_{self.dataset_name}.pyarow", 
+                                num_proc=32)
+
         self.batch_size = params.batch_size if params.batch_size < len(self.data) else len(self.data)
         self.bm25_percentage = bm25_percentage 
         self.dense_percentage = dense_percentage
@@ -171,7 +171,12 @@ class HardRetrievalBatchDataset(BaseDataset):
         gc.collect()
         
     def index_by_dense_retriever(self):
+        retrieval_encoder = AutoModel.from_pretrained(self.params.retriever_model)
+        retrieval_tokenizer = AutoTokenizer.from_pretrained(self.params.retriever_model)
+        retrieval_encoder = retrieval_encoder.cuda()
+
         num_hard_example = 1000 if len(self.data) > 1000 else len(self.data)
+
         def compute_embedding(example, rank, retrieval_encoder, retrieval_tokenizer):
             input_ids = retrieval_tokenizer(example["author_content"], 
                                             return_tensors="pt", 
@@ -185,7 +190,7 @@ class HardRetrievalBatchDataset(BaseDataset):
             return example
         
         data_with_index = self.data.map(lambda example: {"author_content": " ".join(example[self.text_key])})
-        data_with_index = data_with_index.map(lambda example, rank: compute_embedding(example, rank, self.retrieval_encoder, self.retrieval_tokenizer), 
+        data_with_index = data_with_index.map(lambda example, rank: compute_embedding(example, rank, retrieval_encoder, retrieval_tokenizer), 
                                               batched=True, batch_size=256, with_rank=True, 
                                               cache_file_name=f"cache/{self.training_percentage}_condenser_{self.dataset_name}.pyarow")
         data_with_index.add_faiss_index(column='embeddings', faiss_verbose=True)
@@ -200,6 +205,48 @@ class HardRetrievalBatchDataset(BaseDataset):
         
         return retrieval_result
         
+    # def compute_topic_emb(self):
+    #     # data = self.data.map(lambda item: {'tokenized_docs': [preprocess(it) for it in item[self.text_key]]},
+    #     #                      cache_file_name=f"cache/{self.training_percentage}_preprocess_{self.dataset_name}.pyarow", num_proc=32)
+    #     # corpus = []
+    #     # for item in data:
+    #     #     corpus.extend(item['tokenized_docs'])
+        
+    #     # dictionary = corpora.Dictionary(corpus)
+    #     # dictionary.filter_extremes(no_below=20, no_above=0.5)
+    #     # corpus = [dictionary.doc2bow(doc) for doc in corpus]
+        
+    #     # model_checkpoint = pathlib.Path(f'topic_model/{self.training_percentage}_LDA_{self.dataset_name}.pkl')
+    #     # model_checkpoint.parent.mkdir(exist_ok=True, parents=True)
+    #     # if os.path.exists(model_checkpoint):
+    #     #     with open(model_checkpoint, 'rb') as f:
+    #     #         lda_model = pickle.load(f)
+    #     # else:
+    #     #     temp = dictionary[0]
+    #     #     lda_model = TopicModel(num_topic=512, corpus=corpus, dictionary=dictionary.id2token)
+    #     #     with open(model_checkpoint, 'wb') as f:
+    #     #         pickle.dump(lda_model, f, pickle.HIGHEST_PROTOCOL)
+    #     tokenizer = AutoTokenizer.from_pretrained('sentence-transformers/all-MiniLM-L6-v2')
+    #     model = AutoModel.from_pretrained('sentence-transformers/all-MiniLM-L6-v2')
+    #     model = model.cuda()
+
+    #     def compute_topic_emb(batch):
+    #         text = batch[self.text_key]
+    #         text = [' '.join(item) for item in text]
+    #         # text = preprocess(text)
+    #         # text = dictionary.doc2bow(text)
+    #         encoded_input = tokenizer(text, padding=True, truncation=True, return_tensors='pt').to('cuda:0')
+
+    #         with torch.no_grad():
+    #             model_output = model(**encoded_input)
+    #         topic_emb = mean_pooling(model_output, encoded_input['attention_mask'])
+    #         topic_emb = F.normalize(topic_emb, p=2, dim=1)
+    #         topic_emb = topic_emb.tolist()
+
+    #         return {'topic_emb': topic_emb}
+        
+    #     self.data = self.data.map(lambda batch: compute_topic_emb(batch), batched=True, batch_size=500,
+    #                               cache_file_name=f"cache/{self.training_percentage}_SBERT_{self.dataset_name}.pyarow",)
     
     def train_collate_fn(self, batch):
         """This function will sample a random number of episodes as per Section 2.3 of:
@@ -207,11 +254,13 @@ class HardRetrievalBatchDataset(BaseDataset):
         """
         author = []
         input_ids, attention_mask = [], []
+        pruned_input_ids, pruned_attention_mask = [], []
         for item in batch:
             author.extend(item['author'])
             input_ids.extend(item['input_ids'])
             attention_mask.extend(item['attention_mask'])
-
+            pruned_input_ids.extend(item['pruned_input_ids'])
+            pruned_attention_mask.extend(item['pruned_attention_mask'])
 
         author_dict = {a_id: i for i, a_id in enumerate(set(collapse(author)))}
         author = [[author_dict[a] for a in item] for item in author]
@@ -233,8 +282,11 @@ class HardRetrievalBatchDataset(BaseDataset):
     
         input_ids = torch.stack(padding([f[:, start:start + sample_size, :] for f in input_ids], pad_value=self.tokenizer.pad_token_id)) # (bs, a, d.p.a, l)
         attention_mask = torch.stack(padding([f[:, start:start + sample_size, :] for f in attention_mask], pad_value=0))
+        pruned_input_ids = torch.stack(padding([f[:, start:start + sample_size, :] for f in pruned_input_ids], pad_value=self.tokenizer.pad_token_id)) # (bs, a, d.p.a, l)
+        pruned_attention_mask = torch.stack(padding([f[:, start:start + sample_size, :] for f in pruned_attention_mask], pad_value=0))
         data = [input_ids, attention_mask]
-        return data, author
+        pruned_data = [pruned_input_ids, pruned_attention_mask]
+        return data, author, pruned_data
     
     def val_test_collate_fn(self, batch):
         input_ids = [item['input_ids'] for item in batch]
@@ -280,13 +332,16 @@ class HardRetrievalBatchDataset(BaseDataset):
             author = []
             input_ids = []
             attention_mask = []
+            pruned_input_ids, pruned_attention_mask = [], []
             for item in data:
-                _input_ids, _attention_mask, _author = self.process_author_data(item)
+                _input_ids, _attention_mask, _author, _pruned_input_ids, _pruned_attention_mask = self.process_author_data(item)
                 input_ids.append(_input_ids)
                 attention_mask.append(_attention_mask)
+                pruned_input_ids.append(_pruned_input_ids)
+                pruned_attention_mask.append(_pruned_attention_mask)
                 author.append(_author)
 
-            return {'input_ids': input_ids, 'attention_mask': attention_mask, 'author': author}
+            return {'input_ids': input_ids, 'attention_mask': attention_mask, 'author': author, 'pruned_input_ids': pruned_input_ids, 'pruned_attention_mask': pruned_attention_mask,}
         else:
             author_data = self.data[index]
             tokenized_episode = self.tokenizer(

@@ -76,29 +76,23 @@ class BaseDataset(ABC, Dataset):
         num_docs = len(author_data[self.text_key])
         episode_length = self.episode_length
         docs = author_data[self.text_key]
+        pruned_docs = author_data['pruned_docs']
+        docs = list(zip(docs, pruned_docs))
+
         if num_docs < self.episode_length:
             num_augmented = self.episode_length - num_docs
-            tmp = []
-            tmp_origin = []
             for i in range(num_augmented):
-                text = random.choice(docs)
+                text, pruned_doc = random.choice(docs)
                 _text = self.augmented(text, mask_rate=0.2)
-                tmp.append(_text)
-                tmp_origin.append(text)
-            author_data[self.text_key].extend(tmp)
+                docs.append((_text, pruned_doc))
             num_docs = episode_length
         
         num_augmented = ceil((self.augmented_percentage / (1 - self.augmented_percentage)) * num_docs)
-        tmp = []
-        tmp_origin = []
         for i in range(num_augmented):
-            text = random.choice(docs)
+            text, pruned_doc = random.choice(docs)
             _text = self.augmented(text, mask_rate=0.2)
-            tmp.append(_text)
-            tmp_origin.append(text)
-        author_data[self.text_key].extend(tmp)
-        
-        random.shuffle(author_data[self.text_key])
+            docs.append((_text, pruned_doc))
+        random.shuffle(docs)
 
         maxval = num_docs - episode_length
 
@@ -106,9 +100,9 @@ class BaseDataset(ABC, Dataset):
             start_index = 0
         else:
             start_index = random.randint(0, maxval)
-    
-        episode = {k: v[start_index: start_index + episode_length] 
-                for k, v in author_data.items() if isinstance(v, list) and len(v) > 0}
+
+        episode = {self.text_key: [item[0] for item in docs[start_index: start_index + episode_length]],
+                   'pruned_doc': [item[1] for item in docs[start_index: start_index + episode_length]]}
          
         episode['author_id'] = author_data[self.author_key]
             
@@ -117,15 +111,22 @@ class BaseDataset(ABC, Dataset):
     def process_author_data(self, author_data):
         text = []
         author = []
+        pruned_text = []
         for _ in range(self.num_sample_per_author):
             episode = self.sample_episode(author_data)
             text.extend(episode[self.text_key])
+            pruned_text.extend(episode['pruned_doc'])
             author.append(episode["author_id"])
 
         input_ids, attention_mask = self.tokenize_text(text)
         input_ids = input_ids.reshape(self.num_sample_per_author, -1, attention_mask.size(-1)) # (a, d.p.a, l)
         attention_mask = attention_mask.reshape(self.num_sample_per_author, -1, attention_mask.size(-1))
-        return input_ids, attention_mask, author
+
+        pruned_input_ids, pruned_attention_mask = self.tokenize_text(pruned_text)
+        pruned_input_ids = pruned_input_ids.reshape(self.num_sample_per_author, -1, pruned_attention_mask.size(-1)) # (a, d.p.a, l)
+        pruned_attention_mask = pruned_attention_mask.reshape(self.num_sample_per_author, -1, pruned_attention_mask.size(-1))
+
+        return input_ids, attention_mask, author, pruned_input_ids, pruned_attention_mask
     
     @abstractmethod
     def load_data(self, cache_dir: str):

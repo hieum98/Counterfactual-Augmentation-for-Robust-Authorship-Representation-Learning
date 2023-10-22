@@ -20,12 +20,14 @@ from pytorch_metric_learning import losses, miners
 from pytorch_metric_learning.distances import CosineSimilarity
 from pytorch_metric_learning.utils import distributed as pml_dist
 from torch.utils.data import DataLoader
-from transformers import AutoTokenizer, get_linear_schedule_with_warmup
+from transformers import AutoModel
 
 from .erlas import ERLAS
+from .losses import FocalSupConLoss
 from ..data_modules.hard_retrieval_batch_dataset import HardRetrievalBatchDataset
 from ..utils.combined_loader import CombinedLoader
 from ..utils.metric import compute_metrics
+from ..utils.tools import mean_pooling
 
 
 class LightningTrainer(pt.LightningModule):
@@ -35,28 +37,19 @@ class LightningTrainer(pt.LightningModule):
         self.params = params
         
         self.model = ERLAS(params)
+        self.topic_model = AutoModel.from_pretrained('sentence-transformers/all-distilroberta-v1')
         
         self.learning_rate = params.learning_rate
         if self.params.miner_type == 'multi-similariry':
             print("Use Multi Similarity Miner")
-            self._miner = miners.MultiSimilarityMiner(epsilon=0.1)
-        if self.params.loss_type == 'multi-similariry':
-            print("Use Multi Similarity Loss")
-            self._loss = losses.MultiSimilarityLoss(alpha=2, beta=50, base=0.5)
-        else:
-            print("Use Supervised Constrastive Loss")
-            self._loss = losses.SupConLoss(
-                temperature=self.params.temperature, 
-                distance=CosineSimilarity()
-            )
-        if params.gpus > 1:
-            self.loss = pml_dist.DistributedLossWrapper(self._loss)
-        else:
-            self.loss =self._loss
-        if hasattr(self, 'miner') and params.gpus > 1:
-            self.miner = pml_dist.DistributedMinerWrapper(self._miner)
-        else:
-            self.loss =self._loss
+            self.miner = miners.MultiSimilarityMiner(epsilon=0.1)
+
+        print("Use Focal Supervised Constrastive Loss")
+        self.loss = FocalSupConLoss(
+            temperature=self.params.temperature, 
+            use_focal_scaling=False,
+            distance=CosineSimilarity()
+        )
 
         self.automatic_optimization = not self.params.use_gc
         self.fp16 = self.params.precision in ['16', '16-mixed']
@@ -99,21 +92,14 @@ class LightningTrainer(pt.LightningModule):
             backward_fn=self.manual_backward,
         )
     
-    def calculate_loss(self, episode_embeddings, labels):
+    def calculate_loss(self, episode_embeddings, labels, bias_emb):
         """Calculate the customized model loss."""
         episode_embeddings = rearrange(episode_embeddings, "b n l -> (b n) l")
-        if self.trainer.training:
-            if hasattr(self, 'miner'):
-                hard_pairs = self.miner(episode_embeddings, labels)
-                return self.loss(episode_embeddings, labels, hard_pairs)
-            else:
-                return self.loss(episode_embeddings, labels)
+        if hasattr(self, 'miner'):
+            hard_pairs = self.miner(episode_embeddings, labels)
+            return self.loss(episode_embeddings, labels, hard_pairs, bias_emb=bias_emb)
         else:
-            if hasattr(self, 'miner'):
-                hard_pairs = self._miner(episode_embeddings, labels)
-                return self._loss(episode_embeddings, labels, hard_pairs)
-            else:
-                return self._loss(episode_embeddings, labels)
+            return self.loss(episode_embeddings, labels, bias_emb=bias_emb)
             
     def configure_optimizers(self):
         """Configures the LR Optimizer & Scheduler.
@@ -233,14 +219,32 @@ class LightningTrainer(pt.LightningModule):
             return self.forward(*args, **kwargs)
         if self.params.use_gc:
             assert self.gc is not None
-            data, labels = batch
+            data, labels, pruned_data = batch
             # label = [batch_size, (2: query, target)]
             # data = (2: input_ids, attention_mask), [batch_size, (2: query, target), 16, 32]
             batch_size = labels.size(0)
+
+            with torch.no_grad():
+                input_ids, attention_mask = pruned_data[0], pruned_data[1]
+                B, N, E, _ = input_ids.shape
+                topic_embeddings = []
+                for i in range(B):
+                    _input_ids = rearrange(input_ids[i], "n e l -> (n e) l")
+                    _attention_mask = rearrange(attention_mask[i], "n e l -> (n e) l")
+                    model_output = self.topic_model(input_ids=_input_ids,
+                                                    attention_mask=_attention_mask,
+                                                    return_dict=True,
+                                                    output_hidden_states=True,)
+                    _topic_embeddings = mean_pooling(model_output, _attention_mask) 
+                    _topic_embeddings = rearrange(_topic_embeddings, '(n e) h -> n e h', n=N, e=E)
+                    _topic_embeddings = torch.mean(_topic_embeddings, dim=1) # (n, h)
+                    topic_embeddings.append(_topic_embeddings)
+                topic_embeddings = torch.cat(topic_embeddings, dim=0)
+
             optimizer = self.optimizers()
             optimizer.zero_grad()
             loss = (
-                self.gc(data, no_sync_except_last=(self.params.gpus > 1), labels=labels.flatten(),)
+                self.gc(data, no_sync_except_last=(self.params.gpus > 1), labels=labels.flatten(), bias_emb=topic_embeddings)
                 / self.params.gpus
             )
             optimizer.step()
@@ -250,6 +254,18 @@ class LightningTrainer(pt.LightningModule):
                 "batch_size": batch_size,
             }
         else:
+            input_ids, attention_mask = pruned_data[0], pruned_data[1]
+            input_ids = rearrange(input_ids, "b n e l -> (b n e) l")
+            attention_mask = rearrange(attention_mask, "b n e l -> (b n e) l")
+            with torch.no_grad():
+                model_output = self.topic_model(input_ids=input_ids,
+                                                attention_mask=attention_mask,
+                                                return_dict=True,
+                                                output_hidden_states=True,)
+                topic_embeddings = mean_pooling(model_output['last_hidden_state'], attention_mask) # (b, n, e, h)
+                topic_embeddings = torch.mean(topic_embeddings, dim=2) # (b, n, h)
+                topic_embeddings = rearrange(topic_embeddings, 'b n h -> (b n) h')
+
             step_outputs = self._internal_step(batch)
             
         if not self.params.use_gc:
@@ -258,7 +274,7 @@ class LightningTrainer(pt.LightningModule):
 
             # training_step_end is not handled by pl context manager, need to autocast manually
             with autocast() if self.fp16 else nullcontext():
-                loss = self.calculate_loss(episode_embeddings, labels)
+                loss = self.calculate_loss(episode_embeddings, labels, topic_embeddings)
                 
             return_dict = {"loss": loss}
             self.log("loss", loss,  prog_bar=True, sync_dist=True)
