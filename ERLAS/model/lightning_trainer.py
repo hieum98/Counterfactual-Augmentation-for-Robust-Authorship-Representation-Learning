@@ -47,7 +47,7 @@ class LightningTrainer(pt.LightningModule):
         print("Use Focal Supervised Constrastive Loss")
         self.loss = FocalSupConLoss(
             temperature=self.params.temperature, 
-            use_focal_scaling=False,
+            use_focal_scaling=True,
             distance=CosineSimilarity()
         )
 

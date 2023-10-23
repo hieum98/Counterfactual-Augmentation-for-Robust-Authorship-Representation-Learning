@@ -25,7 +25,12 @@ class FocalSupConLoss(BaseMetricLossFunction):
         c_f.check_shapes(embeddings, labels)
         if bias_emb != None:
             cos = CosineSimilarity()
-            bias_score = 1 - cos(bias_emb)
+            mat = 1 - cos(bias_emb)
+            denominator = lmu.logsumexp(
+                mat, add_one=False, dim=1
+            )
+            log_prob = mat - denominator
+            bias_score = torch.exp(log_prob)
         else:
             bias_score = None
 
