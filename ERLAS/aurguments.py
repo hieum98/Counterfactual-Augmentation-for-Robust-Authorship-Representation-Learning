@@ -36,6 +36,8 @@ def create_argument_parser():
                         help="Number of authors to include in each batch")
     parser.add_argument("--augmented_percentage", type=int, default=0.0,
                         help="The percentage of augmented episode in a batch")
+    parser.add_argument("--topic_words_path", default=None, type=str,
+                        help="Location of topic words file")
     
     ##### Model Hyperparameters #####
     parser.add_argument("--model_type", type=str, default="distilroberta-base",
@@ -64,6 +66,8 @@ def create_argument_parser():
                         help="Temperature to use for SupCon")
     parser.add_argument("--num_epoch", type=int, default=20,
                         help="Number of epochs")
+    parser.add_argument("--alpha", type=float, default=0.5,
+                        help="Weight of invariant loss")
     
     ##### MISC #####
     parser.add_argument("--precision", default='16-mixed', type=str,

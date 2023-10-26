@@ -5,6 +5,7 @@ from math import ceil
 import os
 import pathlib
 import random
+import re
 from typing import Any
 from more_itertools import collapse
 import numpy as np
@@ -17,7 +18,7 @@ from retriv import SparseRetriever
 import retriv
 
 from .base_dataset import BaseDataset
-from ..utils.tools import padding
+from ..utils.tools import f_stem, padding
 
 
 class HardRetrievalBatchDataset(BaseDataset):
@@ -199,19 +200,18 @@ class HardRetrievalBatchDataset(BaseDataset):
         del data_with_index
         
         return retrieval_result
-        
     
     def train_collate_fn(self, batch):
         """This function will sample a random number of episodes as per Section 2.3 of:
                 https://arxiv.org/pdf/2105.07263.pdf
         """
         author = []
-        input_ids, attention_mask = [], []
+        input_ids, attention_mask, invariant_mask = [], [], []
         for item in batch:
             author.extend(item['author'])
             input_ids.extend(item['input_ids'])
             attention_mask.extend(item['attention_mask'])
-
+            invariant_mask.extend(item['invariant_mask'])
 
         author_dict = {a_id: i for i, a_id in enumerate(set(collapse(author)))}
         author = [[author_dict[a] for a in item] for item in author]
@@ -233,7 +233,8 @@ class HardRetrievalBatchDataset(BaseDataset):
     
         input_ids = torch.stack(padding([f[:, start:start + sample_size, :] for f in input_ids], pad_value=self.tokenizer.pad_token_id)) # (bs, a, d.p.a, l)
         attention_mask = torch.stack(padding([f[:, start:start + sample_size, :] for f in attention_mask], pad_value=0))
-        data = [input_ids, attention_mask]
+        invariant_mask = torch.stack(padding([f[:, start:start + sample_size, :] for f in invariant_mask], pad_value=0))
+        data = [input_ids, attention_mask, invariant_mask]
         return data, author
     
     def val_test_collate_fn(self, batch):
@@ -280,13 +281,15 @@ class HardRetrievalBatchDataset(BaseDataset):
             author = []
             input_ids = []
             attention_mask = []
+            invariant_mask = []
             for item in data:
-                _input_ids, _attention_mask, _author = self.process_author_data(item)
+                _input_ids, _attention_mask, _invariant_mask, _author = self.process_author_data(item)
                 input_ids.append(_input_ids)
                 attention_mask.append(_attention_mask)
+                invariant_mask.append(_invariant_mask)
                 author.append(_author)
 
-            return {'input_ids': input_ids, 'attention_mask': attention_mask, 'author': author}
+            return {'input_ids': input_ids, 'attention_mask': attention_mask, 'invariant_mask': invariant_mask, 'author': author}
         else:
             author_data = self.data[index]
             tokenized_episode = self.tokenizer(
