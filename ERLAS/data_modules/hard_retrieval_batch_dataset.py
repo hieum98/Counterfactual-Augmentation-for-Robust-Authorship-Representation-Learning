@@ -2,6 +2,7 @@ import gc
 from argparse import Namespace
 import json
 from math import ceil
+from collections import defaultdict
 import os
 import pathlib
 import random
@@ -103,6 +104,9 @@ class HardRetrievalBatchDataset(BaseDataset):
         self.dense_percentage = dense_percentage
         if self.split != 'train':
             self.token_max_length = 128
+
+        if hasattr(self, 'topic_words'):
+            self.augment_data()
         
     def load_data(self, split:str, preprocess_path=None):
         if split=='train':
@@ -164,7 +168,6 @@ class HardRetrievalBatchDataset(BaseDataset):
                     self.author_key: batch[self.author_key],
                     self.text_key: batch[self.text_key]}
 
-        pathlib.Path(f"cache/BM25").mkdir(parents=True, exist_ok=True)
         self.data = self.data.map(lambda batch: retrieve(batch), batched=True, batch_size=500, 
                                   cache_file_name=f"cache/{self.training_percentage}_BM25_{self.dataset_name}.pyarow", 
                                   remove_columns=self.data.column_names)
@@ -201,6 +204,32 @@ class HardRetrievalBatchDataset(BaseDataset):
         
         return retrieval_result
     
+    def augment_data(self):
+        def augment_batch(batch):
+            author_docs = batch[self.text_key]
+            author_data = {
+                self.text_key: [],
+                'topic_word_pos': []
+            }
+            for ori_docs in author_docs:
+                num_docs = len(ori_docs)
+                num_augmented = ceil((self.augmented_percentage / (1 - self.augmented_percentage)) * num_docs)
+                tmp = []
+                for i in range(num_augmented):
+                    text = random.choice(ori_docs)
+                    _text = self.augmented(text, mask_rate=0.5)
+                    if _text != None:
+                        tmp.append(_text)
+                augmented_docs = ori_docs + tmp
+                topic_word_pos = self.find_word_position(augmented_docs, self.topic_words)
+
+                author_data[self.text_key].append(augmented_docs)
+                author_data['topic_word_pos'].append(topic_word_pos)
+            return author_data
+        
+        self.data = self.data.map(augment_batch, batched=True, batch_size=100, num_proc=20, 
+                                  cache_file_name=f"cache/{self.training_percentage}_augmented_{self.augmented_percentage}_{self.dataset_name}.pyarow")
+
     def train_collate_fn(self, batch):
         """This function will sample a random number of episodes as per Section 2.3 of:
                 https://arxiv.org/pdf/2105.07263.pdf
@@ -235,6 +264,7 @@ class HardRetrievalBatchDataset(BaseDataset):
         attention_mask = torch.stack(padding([f[:, start:start + sample_size, :] for f in attention_mask], pad_value=0))
         invariant_mask = torch.stack(padding([f[:, start:start + sample_size, :] for f in invariant_mask], pad_value=0))
         data = [input_ids, attention_mask, invariant_mask]
+        breakpoint()
         return data, author
     
     def val_test_collate_fn(self, batch):

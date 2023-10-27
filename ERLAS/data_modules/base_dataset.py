@@ -26,8 +26,8 @@ class BaseDataset(ABC, Dataset):
         self.token_max_length = params.token_max_length
         self.augmented_percentage = params.augmented_percentage
         self.tokenizer = AutoTokenizer.from_pretrained(params.model_type)
-        self.topic_words = []
         if os.path.exists(params.topic_words_path):
+            self.topic_words = []
             print("Load topic words from {}".format(params.topic_words_path))
             with open(params.topic_words_path, 'r', encoding='utf-8') as f :
                 for line in f:
@@ -84,6 +84,10 @@ class BaseDataset(ABC, Dataset):
             token = re.sub('[^a-z]', '', token)
             if len(token) != 0 and f_stem([token])[0] in self.topic_words:
                 topic_token_idx.append(idx)
+        
+        if len(topic_token_idx) <= 0:
+            return None
+        
         n_mask = ceil(mask_rate * len(topic_token_idx))
         random.shuffle(topic_token_idx)
         mask_id = topic_token_idx[:n_mask]
@@ -118,32 +122,20 @@ class BaseDataset(ABC, Dataset):
         num_docs = len(author_data[self.text_key])
         episode_length = self.episode_length
         docs = author_data[self.text_key]
+        topic_word_pos = author_data['topic_word_pos']
         if num_docs < self.episode_length:
             num_augmented = self.episode_length - num_docs
-            tmp = []
-            tmp_origin = []
             for i in range(num_augmented):
-                text = random.choice(docs)
-                _text = self.augmented(text, mask_rate=0.5)
-                tmp.append(_text)
-                tmp_origin.append(text)
-            author_data[self.text_key].extend(tmp)
+                idx = random.choice(range(num_docs))
+                _text = docs[idx]
+                _topic_word_pos = topic_word_pos[idx]
+                docs.append(_text)
+                topic_word_pos.append(_topic_word_pos)
             num_docs = episode_length
         
-        num_augmented = ceil((self.augmented_percentage / (1 - self.augmented_percentage)) * num_docs)
-        tmp = []
-        tmp_origin = []
-        for i in range(num_augmented):
-            text = random.choice(docs)
-            _text = self.augmented(text, mask_rate=0.5)
-            tmp.append(_text)
-            tmp_origin.append(text)
-        author_data[self.text_key].extend(tmp)
-        
-        random.shuffle(author_data[self.text_key])
-
-        docs = author_data[self.text_key]
-        topic_word_pos = self.find_word_position(docs, self.topic_words)
+        temp  = list(zip(docs, topic_word_pos))
+        random.shuffle(temp)
+        docs, topic_word_pos = zip(*temp)
 
         maxval = num_docs - episode_length
 

@@ -34,7 +34,7 @@ def create_argument_parser():
                         help="The proportion of hard examples retrieverd by faiss")
     parser.add_argument("--batch_size", type=int, default=128,
                         help="Number of authors to include in each batch")
-    parser.add_argument("--augmented_percentage", type=int, default=0.0,
+    parser.add_argument("--augmented_percentage", type=float, default=0.5,
                         help="The percentage of augmented episode in a batch")
     parser.add_argument("--topic_words_path", default=None, type=str,
                         help="Location of topic words file")
