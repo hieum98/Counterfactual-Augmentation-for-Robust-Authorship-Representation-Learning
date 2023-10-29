@@ -118,10 +118,10 @@ class LightningTrainer(pt.LightningModule):
         
         else:
             if hasattr(self, 'miner'):
-                hard_pairs = self._miner(episode_embeddings, labels)
-                return self._loss(episode_embeddings, labels, hard_pairs)
+                hard_pairs = self.miner(episode_embeddings, labels)
+                return self.loss(episode_embeddings, labels, hard_pairs)
             else:
-                return self._loss(episode_embeddings, labels)
+                return self.loss(episode_embeddings, labels)
             
     def configure_optimizers(self):
         """Configures the LR Optimizer & Scheduler.
@@ -162,11 +162,7 @@ class LightningTrainer(pt.LightningModule):
                                             num_workers=self.params.num_workers,
                                             pin_memory=self.params.pin_memory,
                                             collate_fn=dataset.train_collate_fn)
-        
-        if len(data_loaders) == 1:
-            return list(data_loaders.items())[0][1]
-        else:
-            return CombinedLoader(iterables=data_loaders, mode="random")
+        return CombinedLoader(iterables=data_loaders, mode="random")
     
     def test_dataloader(self) -> EVAL_DATALOADERS:
         datasets = {} 
@@ -251,7 +247,6 @@ class LightningTrainer(pt.LightningModule):
 
             data = [input_ids, attention_mask]
 
-            invariant_reps = []
             episode_embeddings = []
             with torch.no_grad():
                 bs = input_ids.size(0)
