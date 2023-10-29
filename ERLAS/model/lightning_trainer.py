@@ -164,7 +164,7 @@ class LightningTrainer(pt.LightningModule):
                                             collate_fn=dataset.train_collate_fn)
         
         if len(data_loaders) == 1:
-            return data_loaders.items()[0][1]
+            return list(data_loaders.items())[0][1]
         else:
             return CombinedLoader(iterables=data_loaders, mode="random")
     
