@@ -36,7 +36,7 @@ def create_argument_parser():
                         help="Number of authors to include in each batch")
     parser.add_argument("--augmented_percentage", type=float, default=0.5,
                         help="The percentage of augmented episode in a batch")
-    parser.add_argument("--topic_words_path", default=None, type=str,
+    parser.add_argument("--topic_words_path", default='topic_words_path.txt', type=str,
                         help="Location of topic words file")
     
     ##### Model Hyperparameters #####

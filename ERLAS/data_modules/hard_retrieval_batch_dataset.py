@@ -264,7 +264,6 @@ class HardRetrievalBatchDataset(BaseDataset):
         attention_mask = torch.stack(padding([f[:, start:start + sample_size, :] for f in attention_mask], pad_value=0))
         invariant_mask = torch.stack(padding([f[:, start:start + sample_size, :] for f in invariant_mask], pad_value=0))
         data = [input_ids, attention_mask, invariant_mask]
-        breakpoint()
         return data, author
     
     def val_test_collate_fn(self, batch):

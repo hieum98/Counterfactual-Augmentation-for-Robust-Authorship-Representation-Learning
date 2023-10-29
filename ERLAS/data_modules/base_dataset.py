@@ -35,7 +35,7 @@ class BaseDataset(ABC, Dataset):
                     if len(line) > 3:
                         self.topic_words.append(line)
     
-    def tokenize_text(self, all_text, topic_word_pos):
+    def tokenize_text(self, all_text, topic_word_pos=None):
         tokenized_episode = self.tokenizer(
             all_text, 
             padding="longest", 
@@ -43,17 +43,20 @@ class BaseDataset(ABC, Dataset):
             max_length=self.token_max_length, 
             return_tensors='pt'
         )
-        assert len(topic_word_pos) == tokenized_episode['attention_mask'].size(0)
-        topic_mask = torch.ones_like(tokenized_episode['attention_mask'])
-        for i in range(tokenized_episode['attention_mask'].size(0)):
-            for char_pos in topic_word_pos[i]:
-                word_pos = tokenized_episode.char_to_word(i, char_pos)
-                if word_pos != None:
-                    _token_pos = tokenized_episode.word_to_tokens(i, word_pos)
-                    for token_idx in range(_token_pos[0], _token_pos[1]):
-                        topic_mask[i, token_idx] = 0
+        if topic_word_pos != None:
+            assert len(topic_word_pos) == tokenized_episode['attention_mask'].size(0)
+            topic_mask = torch.ones_like(tokenized_episode['attention_mask'])
+            for i in range(tokenized_episode['attention_mask'].size(0)):
+                for char_pos in topic_word_pos[i]:
+                    word_pos = tokenized_episode.char_to_word(i, char_pos)
+                    if word_pos != None:
+                        _token_pos = tokenized_episode.word_to_tokens(i, word_pos)
+                        for token_idx in range(_token_pos[0], _token_pos[1]):
+                            topic_mask[i, token_idx] = 0
 
-        tokenized_episode =  self.reformat_tokenized_inputs(tokenized_episode, topic_mask)
+            tokenized_episode =  self.reformat_tokenized_inputs(tokenized_episode, topic_mask)
+        else:
+            tokenized_episode =  self.reformat_tokenized_inputs(tokenized_episode)
         
         return tokenized_episode
 
