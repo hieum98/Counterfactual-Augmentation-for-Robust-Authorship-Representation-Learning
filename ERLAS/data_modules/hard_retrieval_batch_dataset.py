@@ -12,7 +12,6 @@ from more_itertools import collapse
 import numpy as np
 import torch
 import tqdm
-from multiprocess import set_start_method
 from transformers import AutoModel, AutoTokenizer
 from datasets import load_dataset, concatenate_datasets
 from retriv import SparseRetriever
