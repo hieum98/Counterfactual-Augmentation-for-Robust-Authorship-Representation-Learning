@@ -162,8 +162,11 @@ class LightningTrainer(pt.LightningModule):
                                             num_workers=self.params.num_workers,
                                             pin_memory=self.params.pin_memory,
                                             collate_fn=dataset.train_collate_fn)
-            
-        return CombinedLoader(iterables=data_loaders, mode="random")
+        
+        if len(data_loaders) == 1:
+            return data_loaders.items()[0][1]
+        else:
+            return CombinedLoader(iterables=data_loaders, mode="random")
     
     def test_dataloader(self) -> EVAL_DATALOADERS:
         datasets = {} 
