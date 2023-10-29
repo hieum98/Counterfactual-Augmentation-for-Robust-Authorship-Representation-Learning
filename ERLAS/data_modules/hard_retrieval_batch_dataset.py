@@ -263,7 +263,7 @@ class HardRetrievalBatchDataset(BaseDataset):
         input_ids = torch.stack(padding([f[:, start:start + sample_size, :] for f in input_ids], pad_value=self.tokenizer.pad_token_id)) # (bs, a, d.p.a, l)
         attention_mask = torch.stack(padding([f[:, start:start + sample_size, :] for f in attention_mask], pad_value=0))
         invariant_mask = torch.stack(padding([f[:, start:start + sample_size, :] for f in invariant_mask], pad_value=0))
-        data = [input_ids, attention_mask, invariant_mask]  
+        data = [input_ids, attention_mask, invariant_mask]
         return data, author
     
     def val_test_collate_fn(self, batch):

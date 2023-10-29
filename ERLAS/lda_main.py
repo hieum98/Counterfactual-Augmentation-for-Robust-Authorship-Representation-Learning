@@ -63,7 +63,7 @@ def main(params):
                         logger=logger,
                         accelerator='gpu', 
                         devices=params.gpus,
-                        strategy='ddp_find_unused_parameters_true' if params.gpus > 1 else 'auto',
+                        strategy='auto',
                         callbacks = [checkpoint_callback, lr_logger,],)
     trainer.fit(model)
 
