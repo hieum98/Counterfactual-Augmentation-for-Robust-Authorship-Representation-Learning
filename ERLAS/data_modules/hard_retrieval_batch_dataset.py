@@ -67,7 +67,7 @@ class HardRetrievalBatchDataset(BaseDataset):
             preprocess_file = f'dr_{self.is_index_by_dense_retriever}_BM25_{self.is_index_by_BM25}_data.jsonl'
         preprocess_path = os.path.join(self.dataset_path, preprocess_file)
         full_preprocess_path = os.path.join('dr_True_BM25_True_data.jsonl', preprocess_file)
-        if (os.path.exists(preprocess_path) or os.path.exists(full_preprocess_path)) and self.split=='train':
+        if (os.path.exists(preprocess_path) or os.path.exists(full_preprocess_path)) and self.split=='train' and self.is_index_by_dense_retriever and self.is_index_by_BM25:
             print(f"Loading preprocessed data from cache: {preprocess_path}")
             self.data = self.load_data(split=split, preprocess_path=preprocess_path)
             self.data = self.data.shuffle(seed=seed)
@@ -87,7 +87,7 @@ class HardRetrievalBatchDataset(BaseDataset):
                 self.retrieval_encoder = self.retrieval_encoder.cuda()
                 retrieval_result = self.index_by_dense_retriever()
             
-            if self.split=='train':
+            if self.split=='train' and self.is_index_by_BM25 and self.is_index_by_dense_retriever:
                 print("Saving cache.....")
                 with open(preprocess_path, 'w', encoding='utf-8') as f:
                     for idx, data in tqdm.tqdm(enumerate(self.data)):
@@ -288,7 +288,7 @@ class HardRetrievalBatchDataset(BaseDataset):
                 faiss_neighbor_ids = author_data['dense_retriever_hard_example_idx'][:num_dense_hard_example]
             else:
                 faiss_neighbor_ids = []
-            if self.bm25_percentage > 0 and self.index_by_BM25:
+            if self.bm25_percentage > 0 and self.is_index_by_BM25:
                 es_neighbor_ids = author_data['BM25_hard_example_idx'][:num_BM25_hard_example]
             else:
                 es_neighbor_ids = []
