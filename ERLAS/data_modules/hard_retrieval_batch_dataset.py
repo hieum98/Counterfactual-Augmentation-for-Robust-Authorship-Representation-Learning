@@ -2,22 +2,23 @@ import gc
 from argparse import Namespace
 import json
 from math import ceil
+from collections import defaultdict
 import os
 import pathlib
 import random
+import re
 from typing import Any
 from more_itertools import collapse
 import numpy as np
 import torch
 import tqdm
-from multiprocess import set_start_method
 from transformers import AutoModel, AutoTokenizer
 from datasets import load_dataset, concatenate_datasets
 from retriv import SparseRetriever
 import retriv
 
 from .base_dataset import BaseDataset
-from ..utils.tools import padding
+from ..utils.tools import f_stem, padding
 
 
 class HardRetrievalBatchDataset(BaseDataset):
@@ -66,7 +67,7 @@ class HardRetrievalBatchDataset(BaseDataset):
             preprocess_file = f'dr_{self.is_index_by_dense_retriever}_BM25_{self.is_index_by_BM25}_data.jsonl'
         preprocess_path = os.path.join(self.dataset_path, preprocess_file)
         full_preprocess_path = os.path.join('dr_True_BM25_True_data.jsonl', preprocess_file)
-        if (os.path.exists(preprocess_path) or os.path.exists(full_preprocess_path)) and self.split=='train':
+        if (os.path.exists(preprocess_path) or os.path.exists(full_preprocess_path)) and self.split=='train' and self.is_index_by_dense_retriever and self.is_index_by_BM25:
             print(f"Loading preprocessed data from cache: {preprocess_path}")
             self.data = self.load_data(split=split, preprocess_path=preprocess_path)
             self.data = self.data.shuffle(seed=seed)
@@ -86,7 +87,7 @@ class HardRetrievalBatchDataset(BaseDataset):
                 self.retrieval_encoder = self.retrieval_encoder.cuda()
                 retrieval_result = self.index_by_dense_retriever()
             
-            if self.split=='train':
+            if self.split=='train' and self.is_index_by_BM25 and self.is_index_by_dense_retriever:
                 print("Saving cache.....")
                 with open(preprocess_path, 'w', encoding='utf-8') as f:
                     for idx, data in tqdm.tqdm(enumerate(self.data)):
@@ -102,6 +103,9 @@ class HardRetrievalBatchDataset(BaseDataset):
         self.dense_percentage = dense_percentage
         if self.split != 'train':
             self.token_max_length = 128
+
+        if hasattr(self, 'topic_words'):
+            self.augment_data()
         
     def load_data(self, split:str, preprocess_path=None):
         if split=='train':
@@ -163,7 +167,6 @@ class HardRetrievalBatchDataset(BaseDataset):
                     self.author_key: batch[self.author_key],
                     self.text_key: batch[self.text_key]}
 
-        pathlib.Path(f"cache/BM25").mkdir(parents=True, exist_ok=True)
         self.data = self.data.map(lambda batch: retrieve(batch), batched=True, batch_size=500, 
                                   cache_file_name=f"cache/{self.training_percentage}_BM25_{self.dataset_name}.pyarow", 
                                   remove_columns=self.data.column_names)
@@ -199,19 +202,44 @@ class HardRetrievalBatchDataset(BaseDataset):
         del data_with_index
         
         return retrieval_result
-        
     
+    def augment_data(self):
+        def augment_batch(batch):
+            author_docs = batch[self.text_key]
+            author_data = {
+                self.text_key: [],
+                'topic_word_pos': []
+            }
+            for ori_docs in author_docs:
+                num_docs = len(ori_docs)
+                num_augmented = ceil((self.augmented_percentage / (1 - self.augmented_percentage)) * num_docs)
+                tmp = []
+                for i in range(num_augmented):
+                    text = random.choice(ori_docs)
+                    _text = self.augmented(text, mask_rate=0.5)
+                    if _text != None:
+                        tmp.append(_text)
+                augmented_docs = ori_docs + tmp
+                topic_word_pos = self.find_word_position(augmented_docs, self.topic_words)
+
+                author_data[self.text_key].append(augmented_docs)
+                author_data['topic_word_pos'].append(topic_word_pos)
+            return author_data
+        
+        self.data = self.data.map(augment_batch, batched=True, batch_size=100, num_proc=20, 
+                                  cache_file_name=f"cache/{self.training_percentage}_augmented_{self.augmented_percentage}_{self.dataset_name}.pyarow")
+
     def train_collate_fn(self, batch):
         """This function will sample a random number of episodes as per Section 2.3 of:
                 https://arxiv.org/pdf/2105.07263.pdf
         """
         author = []
-        input_ids, attention_mask = [], []
+        input_ids, attention_mask, invariant_mask = [], [], []
         for item in batch:
             author.extend(item['author'])
             input_ids.extend(item['input_ids'])
             attention_mask.extend(item['attention_mask'])
-
+            invariant_mask.extend(item['invariant_mask'])
 
         author_dict = {a_id: i for i, a_id in enumerate(set(collapse(author)))}
         author = [[author_dict[a] for a in item] for item in author]
@@ -233,7 +261,8 @@ class HardRetrievalBatchDataset(BaseDataset):
     
         input_ids = torch.stack(padding([f[:, start:start + sample_size, :] for f in input_ids], pad_value=self.tokenizer.pad_token_id)) # (bs, a, d.p.a, l)
         attention_mask = torch.stack(padding([f[:, start:start + sample_size, :] for f in attention_mask], pad_value=0))
-        data = [input_ids, attention_mask]
+        invariant_mask = torch.stack(padding([f[:, start:start + sample_size, :] for f in invariant_mask], pad_value=0))
+        data = [input_ids, attention_mask, invariant_mask]
         return data, author
     
     def val_test_collate_fn(self, batch):
@@ -259,7 +288,7 @@ class HardRetrievalBatchDataset(BaseDataset):
                 faiss_neighbor_ids = author_data['dense_retriever_hard_example_idx'][:num_dense_hard_example]
             else:
                 faiss_neighbor_ids = []
-            if self.bm25_percentage > 0 and self.index_by_BM25:
+            if self.bm25_percentage > 0 and self.is_index_by_BM25:
                 es_neighbor_ids = author_data['BM25_hard_example_idx'][:num_BM25_hard_example]
             else:
                 es_neighbor_ids = []
@@ -280,13 +309,15 @@ class HardRetrievalBatchDataset(BaseDataset):
             author = []
             input_ids = []
             attention_mask = []
+            invariant_mask = []
             for item in data:
-                _input_ids, _attention_mask, _author = self.process_author_data(item)
+                _input_ids, _attention_mask, _invariant_mask, _author = self.process_author_data(item)
                 input_ids.append(_input_ids)
                 attention_mask.append(_attention_mask)
+                invariant_mask.append(_invariant_mask)
                 author.append(_author)
 
-            return {'input_ids': input_ids, 'attention_mask': attention_mask, 'author': author}
+            return {'input_ids': input_ids, 'attention_mask': attention_mask, 'invariant_mask': invariant_mask, 'author': author}
         else:
             author_data = self.data[index]
             tokenized_episode = self.tokenizer(

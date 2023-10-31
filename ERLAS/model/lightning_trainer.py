@@ -9,17 +9,19 @@ from more_itertools import collapse
 from math import ceil
 from einops import rearrange
 from matplotlib import pyplot as plt
-
 import numpy as np
+from scipy.stats import wasserstein_distance
 import pytorch_lightning as pt
 from pytorch_lightning.utilities.types import EVAL_DATALOADERS, STEP_OUTPUT
 import torch
+import torch.nn as nn
+import torch.nn.functional as F
 import torch.optim as optim
+from torch.utils.data import DataLoader
 from torch.cuda.amp import autocast
 from pytorch_metric_learning import losses, miners
 from pytorch_metric_learning.distances import CosineSimilarity
 from pytorch_metric_learning.utils import distributed as pml_dist
-from torch.utils.data import DataLoader
 from transformers import AutoTokenizer, get_linear_schedule_with_warmup
 
 from .erlas import ERLAS
@@ -99,21 +101,27 @@ class LightningTrainer(pt.LightningModule):
             backward_fn=self.manual_backward,
         )
     
-    def calculate_loss(self, episode_embeddings, labels):
+    def calculate_loss(self, episode_embeddings, labels, invariant_embeddings):
         """Calculate the customized model loss."""
         episode_embeddings = rearrange(episode_embeddings, "b n l -> (b n) l")
         if self.trainer.training:
             if hasattr(self, 'miner'):
                 hard_pairs = self.miner(episode_embeddings, labels)
+                contrastive_loss = self.loss(episode_embeddings, labels, hard_pairs)
+            else:
+                contrastive_loss = self.loss(episode_embeddings, labels)
+
+            input = F.log_softmax(episode_embeddings, dim=1)
+            log_target = F.log_softmax(invariant_embeddings, dim=1)
+            kl_div_loss = F.kl_div(input, log_target, log_target=True, reduction="sum")
+            return contrastive_loss + self.params.alpha * kl_div_loss
+        
+        else:
+            if hasattr(self, 'miner'):
+                hard_pairs = self.miner(episode_embeddings, labels)
                 return self.loss(episode_embeddings, labels, hard_pairs)
             else:
                 return self.loss(episode_embeddings, labels)
-        else:
-            if hasattr(self, 'miner'):
-                hard_pairs = self._miner(episode_embeddings, labels)
-                return self._loss(episode_embeddings, labels, hard_pairs)
-            else:
-                return self._loss(episode_embeddings, labels)
             
     def configure_optimizers(self):
         """Configures the LR Optimizer & Scheduler.
@@ -154,7 +162,6 @@ class LightningTrainer(pt.LightningModule):
                                             num_workers=self.params.num_workers,
                                             pin_memory=self.params.pin_memory,
                                             collate_fn=dataset.train_collate_fn)
-            
         return CombinedLoader(iterables=data_loaders, mode="random")
     
     def test_dataloader(self) -> EVAL_DATALOADERS:
@@ -236,11 +243,25 @@ class LightningTrainer(pt.LightningModule):
             data, labels = batch
             # label = [batch_size, (2: query, target)]
             # data = (2: input_ids, attention_mask), [batch_size, (2: query, target), 16, 32]
+            input_ids, attention_mask, invariant_mask = data
+
+            data = [input_ids, attention_mask]
+
+            episode_embeddings = []
+            with torch.no_grad():
+                bs = input_ids.size(0)
+                for i in range(0, bs, 32):
+                    _data = [input_ids[i:i+32, :], invariant_mask[i:i+32, :]]
+                    _episode_embeddings, _ = self.model.forward(*_data)
+                    _episode_embeddings = rearrange(_episode_embeddings, "b n h -> (b n) h")
+                    episode_embeddings.append(_episode_embeddings)
+            invariant_embeddings = torch.cat(episode_embeddings, dim=0) # (b, h)
+
             batch_size = labels.size(0)
             optimizer = self.optimizers()
             optimizer.zero_grad()
             loss = (
-                self.gc(data, no_sync_except_last=(self.params.gpus > 1), labels=labels.flatten(),)
+                self.gc(data, no_sync_except_last=(self.params.gpus > 1), labels=labels.flatten(), invariant_embeddings=invariant_embeddings)
                 / self.params.gpus
             )
             optimizer.step()

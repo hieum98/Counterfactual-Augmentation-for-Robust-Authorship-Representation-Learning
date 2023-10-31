@@ -34,8 +34,10 @@ def create_argument_parser():
                         help="The proportion of hard examples retrieverd by faiss")
     parser.add_argument("--batch_size", type=int, default=128,
                         help="Number of authors to include in each batch")
-    parser.add_argument("--augmented_percentage", type=int, default=0.0,
+    parser.add_argument("--augmented_percentage", type=float, default=0.5,
                         help="The percentage of augmented episode in a batch")
+    parser.add_argument("--topic_words_path", default='topic_words_path.txt', type=str,
+                        help="Location of topic words file")
     
     ##### Model Hyperparameters #####
     parser.add_argument("--model_type", type=str, default="distilroberta-base",
@@ -64,11 +66,13 @@ def create_argument_parser():
                         help="Temperature to use for SupCon")
     parser.add_argument("--num_epoch", type=int, default=20,
                         help="Number of epochs")
+    parser.add_argument("--alpha", type=float, default=0.5,
+                        help="Weight of invariant loss")
     
     ##### MISC #####
     parser.add_argument("--precision", default='16-mixed', type=str,
                         help="Precision of model weights")
-    parser.add_argument("--num_workers", type=int, default=8,
+    parser.add_argument("--num_workers", type=int, default=20,
                         help="Number of workers to prefetch data")
     parser.add_argument("--pin_memory", action='store_true', default=False,
                         help="Used pin memory for prefetching data")

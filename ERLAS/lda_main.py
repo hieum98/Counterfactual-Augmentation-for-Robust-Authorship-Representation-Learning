@@ -9,7 +9,8 @@ from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
 from pytorch_lightning.loggers import TensorBoardLogger
 
 from ERLAS.aurguments import create_argument_parser
-from ERLAS.model.lightning_trainer import LightningTrainer
+from ERLAS.data_modules.lda_dataset import LDADataset
+from ERLAS.model.lda_trainer import LDATrainer
 
 torch.backends.cuda.matmul.allow_tf32 = True
 
@@ -27,8 +28,15 @@ def main(params):
 
     # create experiment_dir and load model
     experiment_dir = os.path.join(params.output_path, params.experiment_id)
-    model = LightningTrainer(params)
-
+    dataset = LDADataset(params, dataset_name=params.dataset_name[0])
+    vocab = dataset.tokenizer.vocab
+    idx2word = {v: k for k, v in vocab.items()}
+    vocab_size = dataset.vocab_size
+    model = LDATrainer(params=params,
+                       vocab_size=vocab_size,
+                       num_topics=50,
+                       lr=1e-3)
+    
     checkpoint_callback = ModelCheckpoint(
         dirpath=os.path.join(experiment_dir, params.version, 'checkpoints'),
         filename="step={step}",
@@ -50,30 +58,24 @@ def main(params):
 
     logger = TensorBoardLogger(experiment_dir, version=params.version)
     lr_logger = LearningRateMonitor(logging_interval='step')
-    if params.do_learn:
-        model.train_dataloader()
-        trainer = pt.Trainer(default_root_dir=experiment_dir, 
-                            max_epochs=params.num_epoch,
-                            logger=logger,
-                            enable_checkpointing=True,
-                            accelerator='gpu', 
-                            devices=params.gpus,
-                            strategy='ddp_find_unused_parameters_true' if params.gpus > 1 else 'auto',
-                            precision=params.precision,
-                            reload_dataloaders_every_n_epochs=1,
-                            callbacks = [checkpoint_callback, lr_logger,],)
-        trainer.fit(model)
-    if params.evaluate:
-        trainer = pt.Trainer(default_root_dir=experiment_dir, 
-                            logger=logger,
-                            enable_checkpointing=True,
-                            accelerator='gpu', 
-                            devices=[params.gpus],
-                            strategy='auto',
-                            precision=params.precision,
-                            callbacks = [checkpoint_callback, lr_logger,],)
-        trainer.test(model)
+    trainer = pt.Trainer(default_root_dir=experiment_dir, 
+                        max_epochs=params.num_epoch,
+                        logger=logger,
+                        accelerator='gpu', 
+                        devices=params.gpus,
+                        strategy='auto',
+                        callbacks = [checkpoint_callback, lr_logger,],)
+    trainer.fit(model)
+
+    topics = model.top_words(idx2word=idx2word, n_words=100)
+    with open(f'{params.dataset_name[0]}_topic_words.txt', 'w', encoding='UTF-8') as f: 
+        for item in topics:
+            f.write('\n'.join(item))
+            f.write('\n')
+
 
 if __name__ == "__main__":
     params = create_argument_parser()
     main(params)
+    
+
