@@ -66,8 +66,9 @@ class HardRetrievalBatchDataset(BaseDataset):
         else:
             preprocess_file = f'dr_{self.is_index_by_dense_retriever}_BM25_{self.is_index_by_BM25}_data.jsonl'
         preprocess_path = os.path.join(self.dataset_path, preprocess_file)
-        full_preprocess_path = os.path.join('dr_True_BM25_True_data.jsonl', preprocess_file)
-        if (os.path.exists(preprocess_path) or os.path.exists(full_preprocess_path)) and self.split=='train' and self.is_index_by_dense_retriever and self.is_index_by_BM25:
+        full_preprocess_path = os.path.join(self.dataset_path, 'dr_True_BM25_True_data.jsonl')
+        if (os.path.exists(preprocess_path) or os.path.exists(full_preprocess_path)) and self.split=='train' and (self.is_index_by_dense_retriever or self.is_index_by_BM25):
+            preprocess_path = preprocess_path if os.path.exists(preprocess_path) else full_preprocess_path
             print(f"Loading preprocessed data from cache: {preprocess_path}")
             self.data = self.load_data(split=split, preprocess_path=preprocess_path)
             self.data = self.data.shuffle(seed=seed)
