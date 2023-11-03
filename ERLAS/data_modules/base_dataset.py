@@ -26,8 +26,8 @@ class BaseDataset(ABC, Dataset):
         self.token_max_length = params.token_max_length
         self.augmented_percentage = params.augmented_percentage
         self.tokenizer = AutoTokenizer.from_pretrained(params.model_type)
+        self.topic_words = []
         if os.path.exists(params.topic_words_path):
-            self.topic_words = []
             print("Load topic words from {}".format(params.topic_words_path))
             with open(params.topic_words_path, 'r', encoding='utf-8') as f :
                 for line in f:
