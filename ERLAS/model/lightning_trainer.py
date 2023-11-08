@@ -110,11 +110,13 @@ class LightningTrainer(pt.LightningModule):
                 contrastive_loss = self.loss(episode_embeddings, labels, hard_pairs)
             else:
                 contrastive_loss = self.loss(episode_embeddings, labels)
-
-            input = F.log_softmax(episode_embeddings, dim=1)
-            log_target = F.log_softmax(invariant_embeddings, dim=1)
-            kl_div_loss = F.kl_div(input, log_target, log_target=True, reduction="sum")
-            return contrastive_loss + self.params.alpha * kl_div_loss
+            if self.params.invariant_regularization:
+                input = F.log_softmax(episode_embeddings, dim=1)
+                log_target = F.log_softmax(invariant_embeddings, dim=1)
+                kl_div_loss = F.kl_div(input, log_target, log_target=True, reduction="sum")
+                return contrastive_loss + self.params.alpha * kl_div_loss
+            else:
+                return contrastive_loss
         
         else:
             if hasattr(self, 'miner'):

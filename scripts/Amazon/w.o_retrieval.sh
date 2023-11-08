@@ -1,0 +1,1 @@
+python ERLAS/main.py --dataset_name Amazon --token_max_length 128 --BM25_percentage 0 --dense_percentage 0 --gpus 2 --use_gc --gc_minibatch_size 16 --learning_rate 2e-5 --learning_rate_scaling --num_epoch 5 --do_learn --experiment_id Amazon --version w.o_retrieval --topic_words_path Amazon_topic_words.txt --invariant_regularization

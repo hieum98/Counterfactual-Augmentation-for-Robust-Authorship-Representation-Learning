@@ -68,6 +68,8 @@ def create_argument_parser():
                         help="Number of epochs")
     parser.add_argument("--alpha", type=float, default=0.5,
                         help="Weight of invariant loss")
+    parser.add_argument("--invariant_regularization", action="store_true", default=False,
+                        help="add invariant regualarization term")
     
     ##### MISC #####
     parser.add_argument("--precision", default='16-mixed', type=str,
