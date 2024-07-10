@@ -7,3 +7,4 @@ pretrained_weights
 draft.ipynb
 test.sh
 ERLAS/test_LUAR.py
+scripts/Combination/*
