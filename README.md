@@ -1,6 +1,6 @@
 # *Counterfactual Augmentation for Robust Authorship Representation Learning*
 
-[![SIGIR](https://img.shields.io/badge/SIGIR-2024-b31b1b.svg)](https://arxiv.org/)
+[![SIGIR](https://img.shields.io/badge/SIGIR-2024-b31b1b.svg)](https://dl.acm.org/doi/pdf/10.1145/3626772.3657956)
 
 ERLAS is official pytorch implementation for the paper "Counterfactual Augmentation for Robust Authorship Representation Learning". In this framework we introduce generating style-counterfactual examples by retrieving the most similar content texts by different authors on the same topics/domains.
 
@@ -60,6 +60,25 @@ python ERLAS/main.py \
 
 For other runing scripts, please refer to the folder `scripts`
 
+## Citation 
+```text
+@inproceedings{10.1145/3626772.3657956,
+author = {Man, Hieu and Huu Nguyen, Thien},
+title = {Counterfactual Augmentation for Robust Authorship Representation Learning},
+year = {2024},
+isbn = {9798400704314},
+publisher = {Association for Computing Machinery},
+address = {New York, NY, USA},
+url = {https://doi.org/10.1145/3626772.3657956},
+doi = {10.1145/3626772.3657956},
+pages = {2347–2351},
+numpages = {5},
+keywords = {authorship attribution, counterfactual learning, domain generalization},
+location = {Washington DC, USA},
+series = {SIGIR '24}
+}
+```
 
 ## Bugs or questions?
 If you have any questions about the code, feel free to open an issue on the GitHub repository.
+
