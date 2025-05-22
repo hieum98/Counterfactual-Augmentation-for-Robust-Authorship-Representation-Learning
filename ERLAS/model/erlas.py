@@ -1,6 +1,7 @@
 from argparse import Namespace
 from functools import partial
 
+from huggingface_hub import PyTorchModelHubMixin
 import torch
 import torch.nn as nn
 from einops import rearrange, reduce, repeat
@@ -9,10 +10,11 @@ from transformers import AutoModel, T5EncoderModel
 from .layers import SelfAttention
 
 
-class ERLAS(nn.Module):
-    def __init__(self, params: Namespace):
+class ERLAS(nn.Module, PyTorchModelHubMixin):
+    def __init__(self, params: Namespace = None, embedding_dim: int = None, model_type: str = None, gradient_checkpointing: bool = False):
         super().__init__()
-        
+        if params is None:
+            params = Namespace(embedding_dim=embedding_dim, model_type=model_type, gradient_checkpointing=gradient_checkpointing)
         self.params = params
         self.create_transformer()
         
@@ -91,3 +93,25 @@ class ERLAS(nn.Module):
         output = self.get_episode_embeddings(data)
 
         return output
+
+
+
+if __name__ == "__main__":
+    from transformers import AutoTokenizer
+
+    checkpoint_path = "checkpoints/best-model.ckpt"
+    state = torch.load(checkpoint_path, map_location="cpu")
+    params = state["hyper_parameters"]['params']
+
+    model = ERLAS(embedding_dim=params.embedding_dim, model_type=params.model_type, gradient_checkpointing=params.gradient_checkpointing)
+    imcomplete_keys = model.load_state_dict(state["state_dict"], strict=False)
+    print(f"imcomplete keys: {imcomplete_keys}")
+    tokenizer = AutoTokenizer.from_pretrained(params.model_type)
+
+    model.save_pretrained("erlas")
+    tokenizer.save_pretrained("erlas")
+
+    model.push_to_hub("Hieuman/erlas")
+    tokenizer.push_to_hub("Hieuman/erlas")
+
+
