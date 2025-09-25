@@ -1,7 +1,7 @@
 # *Counterfactual Augmentation for Robust Authorship Representation Learning*
 
 [![SIGIR](https://img.shields.io/badge/SIGIR-2024-b31b1b.svg)](https://dl.acm.org/doi/pdf/10.1145/3626772.3657956)
-[![License](https://img.shields.io/badge/License-Apache2.0-FFD4E.svg)]
+![License](https://img.shields.io/badge/License-Apache2.0-FFD4E.svg)
 [![HF Link](https://img.shields.io/badge/HF%20Models-FFD21E.svg)](https://huggingface.co/Hieuman/erlas)
 
 ERLAS is official pytorch implementation for the paper "Counterfactual Augmentation for Robust Authorship Representation Learning". In this framework we introduce generating style-counterfactual examples by retrieving the most similar content texts by different authors on the same topics/domains.
